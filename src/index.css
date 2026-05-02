@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-serif: "Playfair Display", serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-sun: #FFB347;
+  --color-moon: #B0C4DE;
+  --color-magic-purple: #6A5ACD;
+  --color-deep-space: #0A0A10;
+}
+
+@layer base {
+  body {
+    @apply bg-deep-space text-gray-100 overflow-hidden;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+.glass-panel {
+  @apply bg-white/5 backdrop-blur-xl border border-white/10;
+}
+
+.magic-glow {
+  box-shadow: 0 0 20px rgba(106, 90, 205, 0.3);
+}
+
+.sun-glow {
+  box-shadow: 0 0 30px rgba(255, 179, 71, 0.5);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-white/20 rounded-full;
+}
+
+.markdown-body p {
+  @apply mb-4 leading-relaxed;
+}
+
+.markdown-body em {
+  @apply text-sun italic;
+}
