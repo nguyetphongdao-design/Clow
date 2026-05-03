@@ -495,6 +495,69 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  const checkChapterUnlocks = (state: GameState): number => {
+    const collectedCards = state.cards?.filter(c => c.collected).map(c => c.name) || [];
+    const narrative = state.narrative.toLowerCase();
+    
+    // Original cards (initial total 10)
+    const originalCards = [
+      "The Create", "The Mist", "The Arrow", "The Big", "The Change", 
+      "The Fight", "The Lock", "The Loop", "The Cloud", "The Shield"
+    ];
+    
+    const newCards = collectedCards.filter(name => !originalCards.includes(name));
+    
+    let chapter = 1;
+
+    // Trigger Ch 2: Capture The Dark, The Earthy, The Firey
+    if (newCards.includes('The Dark') && newCards.includes('The Earthy') && newCards.includes('The Firey')) {
+      chapter = 2;
+    }
+
+    // Trigger Ch 3: Capture 2 more cards (total 5 new cards)
+    if (chapter >= 2 && newCards.length >= 5) {
+      chapter = 3;
+    }
+
+    // Trigger Ch 4: Capture The Dream
+    if (newCards.includes('The Dream')) {
+      chapter = 4;
+    }
+
+    // Trigger Ch 5: Inside illusion (Hồi ức Thượng cổ / Ảo cảnh)
+    if (chapter >= 4 && (narrative.includes('ảo cảnh') || narrative.includes('hồi ức') || narrative.includes('quá khứ'))) {
+      chapter = 5;
+    }
+
+    // Trigger Ch 6: Escape illusion / Phán quyết
+    if (chapter >= 5 && (narrative.includes('thoát khỏi') || narrative.includes('phán quyết') || narrative.includes('ngừng lại'))) {
+      chapter = 6;
+    }
+
+    // Trigger Ch 7: Zero captured
+    if (chapter >= 6 && (narrative.includes('thu phục') || narrative.includes('biến trở thành') || narrative.includes('thành lá bài'))) {
+      chapter = 7;
+    }
+
+    // Trigger Ch 8: Transformation
+    if (chapter >= 7 && (narrative.includes('sakura card') || narrative.includes('chuyển hóa') || narrative.includes('thay đổi ma thuật'))) {
+      chapter = 8;
+    }
+
+    // Trigger Ch 9: New villain
+    if (chapter >= 8 && (narrative.includes('phản diện') || narrative.includes('kẻ thôn phệ') || narrative.includes('kẻ thù mới'))) {
+      chapter = 9;
+    }
+
+    // Trigger Ch 10: Final victory
+    if (chapter >= 9 && (narrative.includes('chiến thắng') || narrative.includes('kết thúc') || narrative.includes('bình minh vĩnh cửu') || state.cards?.every(c => c.collected))) {
+      chapter = 10;
+    }
+
+    // Keep the highest chapter reached
+    return Math.max(state.currentChapter || 1, chapter);
+  };
+
   const handleAction = async (input: string, isSystem: boolean = false) => {
     if (!input.trim() || isTyping) return;
     
@@ -558,7 +621,7 @@ export default function App() {
           }
         }
 
-        return { 
+        const stateWithCards = { 
           ...nextTurn, 
           narrative: isSystem ? prev.narrative : nextTurn.narrative,
           affinity: isSystem ? prev.affinity : nextTurn.affinity,
@@ -567,8 +630,12 @@ export default function App() {
           history: newHistory,
           cards: updatedCards,
           zeroProfile: prev.zeroProfile,
-          usedQuests: Array.from(new Set(updatedUsedQuests)) // Deduplicate
+          usedQuests: Array.from(new Set(updatedUsedQuests)), // Deduplicate
+          currentChapter: prev.currentChapter || 1
         };
+
+        const unlockedChapter = checkChapterUnlocks(stateWithCards);
+        return { ...stateWithCards, currentChapter: unlockedChapter };
       };
 
       const finalState = newGameState(gameState);
