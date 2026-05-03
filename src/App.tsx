@@ -305,7 +305,10 @@ export default function App() {
     if (!previousModelMsg || previousModelMsg.role !== 'model') return;
 
     try {
-      const savedState = JSON.parse(previousModelMsg.parts[0].text);
+      const text = previousModelMsg.parts[0].text;
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const cleanedJson = jsonMatch ? jsonMatch[0] : text;
+      const savedState = JSON.parse(cleanedJson);
       const historyBefore = history.slice(0, originalIdx);
       
       setGameState(prev => ({
@@ -333,6 +336,17 @@ export default function App() {
   }, [filteredHistory.length, gameState.characterThoughts, isTyping]);
 
   const [activeMiniApp, setActiveMiniApp] = useState<{ type: 'rumor' | 'quest' | 'profile' | 'thoughts' | 'cards' | 'chapters', content: string } | null>(null);
+
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  useEffect(() => {
+    if (isSaving) {
+      setSaveStatus('saving');
+    } else if (isInitialized.current && user) {
+      setSaveStatus('saved');
+      const timer = setTimeout(() => setSaveStatus('idle'), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSaving, user]);
 
   // Authentication State Listener
   useEffect(() => {
@@ -1288,7 +1302,26 @@ export default function App() {
                  <Zap size={10} />
                </motion.div>
              </button>
-             <div className="text-[10px] text-gray-600 font-mono"></div>
+             <div className="text-[10px] text-gray-600 font-mono flex items-center gap-1.5 min-h-[16px]">
+               {saveStatus === 'saving' && (
+                 <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-sun/40 italic">
+                   <Loader2 size={10} className="animate-spin" />
+                   Syncing...
+                 </motion.span>
+               )}
+               {saveStatus === 'saved' && (
+                 <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-green-500/40">
+                   <Zap size={10} />
+                   Synced
+                 </motion.span>
+               )}
+               {saveStatus === 'error' && (
+                 <span className="text-red-500/40 flex items-center gap-1.5">
+                   <ShieldAlert size={10} />
+                   Sync Error
+                 </span>
+               )}
+             </div>
           </div>
 
           <AnimatePresence>
