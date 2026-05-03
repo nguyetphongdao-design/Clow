@@ -279,7 +279,7 @@ export default function App() {
 
   const [activeMiniApp, setActiveMiniApp] = useState<{ type: 'rumor' | 'quest' | 'profile' | 'thoughts' | 'cards', content: string } | null>(null);
 
-  const moodPool = ["Điềm tĩnh", "Lười biếng", "Gắt gỏng (Tsundere)", "Hoài niệm", "Bí ẩn", "Hơi cáu"];
+  const moodPool = ["Điềm tĩnh", "Lười biếng", "Gắt gỏng (Tsundere)", "Hoài niệm", "Hơi cáu"];
   const healthPool = [
     "Khỏe mạnh (Tạm thời)", 
     "Debuff: Linh hồn bị trọng thương", 
@@ -358,6 +358,10 @@ export default function App() {
         input, 
         trimmedHistory, 
         gameState.zeroProfile,
+        { 
+          collected: gameState.cards?.filter(c => c.collected).length || 0, 
+          total: gameState.cards?.length || 52 
+        },
         gameState.usedQuests
       );
       
@@ -400,11 +404,14 @@ export default function App() {
         };
       });
     } catch (error) {
-      console.error("Game Engine Error:", error);
+      console.error("Lỗi rồi bạn ơi:", error);
     } finally {
       setIsTyping(false);
     }
   };
+
+  const isEndgame = gameState.cards?.every(c => c.collected) || false;
+  const ProfileText = isEndgame ? "Hình thái: Sư tử nhỏ / Lá bài Sun" : "Hình thái: Zero (Thượng cổ)";
 
   if (appState === 'loading') {
     return <LoadingScreen progress={progress} />;
@@ -474,7 +481,9 @@ export default function App() {
               </div>
               <div>
                 <h1 className="font-display font-black text-[10px] leading-tight uppercase tracking-widest text-gradient">Cardcaptor Sakura</h1>
-                <p className="text-[8px] text-sun/60 font-bold uppercase tracking-[0.1em] font-display mt-0.5">New Story : Zero</p>
+                <p className="text-[8px] text-sun/60 font-bold uppercase tracking-[0.1em] font-display mt-0.5">
+                  {isEndgame ? "Sakura Card Era" : "New Story : Zero"}
+                </p>
               </div>
             </div>
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-gray-400 hover:text-white">
@@ -659,7 +668,7 @@ export default function App() {
                         </div>
                       </div>
                       <h3 className="text-3xl font-bold text-white uppercase tracking-widest text-center">Zero</h3>
-                      <p className="text-sun font-medium mt-2 italic text-sm">"Nguyên hình Sư Tử Vàng - Bản nguyên của sự sáng tạo"</p>
+                      <p className="text-sun font-medium mt-2 italic text-sm">"{ProfileText}"</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">

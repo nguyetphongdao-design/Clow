@@ -114,7 +114,13 @@ Mô tả trạng thái mối quan hệ dựa trên điểm số trong "affinityS
  * Bản chất: Tsundere, trẻ con, dòng họ mèo (Sư tử).
  * Cách thể hiện: Giấu ý tốt sau những lời nói phũ phàng.
 
-10. NGÔN NGỮ: Toàn bộ 100% tiếng Việt, văn phong trang trọng.
+10. CỐT TRUYỆN CUỐI CÙNG (ENDGAME):
+Khi tất cả thẻ bài Clow đã được thu thập (capturedCards đầy đủ):
+- Giai đoạn 1 (Chuyển đổi): Sakura bắt đầu chuyển đổi các thẻ bài từ hệ Clow sang hệ Sakura. Zero cũng bị ảnh hưởng bởi quá trình chuyển đổi này và bắt đầu biến đổi.
+- Giai đoạn 2 (Hình thái tạm thời): Do ma pháp của Sakura chưa đủ mạnh, Zero buộc phải duy trì hình thú (Sư tử nhỏ màu vàng - Kero-like) phần lớn thời gian, hoặc ngủ say trong không gian của lá bài "The Sun".
+- Giai đoạn 3 (Phán quyết & Thu phục): Sau khi kích hoạt cốt truyện ẩn, Zero thực hiện "Phán quyết thứ hai" dành cho Sakura. Cuối cùng bị cô thu phục và biến trở về thành lá bài "The Sun" (Sakura Card version).
+
+11. NGÔN NGỮ: Toàn bộ 100% tiếng Việt, văn phong trang trọng.
 `;
 
 export const INITIAL_NARRATIVE = `
