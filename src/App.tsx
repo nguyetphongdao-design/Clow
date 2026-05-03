@@ -28,75 +28,78 @@ import {
   ShieldAlert,
   Ghost,
   Heart,
-  RefreshCw
+  RefreshCw,
+  Lock
 } from 'lucide-react';
-import { GameState, INITIAL_NARRATIVE } from './types';
+import { GameState, INITIAL_NARRATIVE, STORY_CHAPTERS } from './types';
 import { generateNextTurn } from './services/geminiService';
 
 const StarryBackground = React.memo(() => {
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  const starCount = isMobile ? 40 : 100;
-  const shootingStarCount = isMobile ? 3 : 6;
+  const starCount = isMobile ? 80 : 200;
 
   return (
-    <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-black">
+    <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black">
       {/* Static Stars */}
-      <div className="absolute inset-0 opacity-30">
-        {[...Array(starCount)].map((_, i) => (
-          <div 
-            key={i}
-            className="absolute rounded-full bg-white will-change-[opacity,transform]"
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              width: `${Math.random() * 2}px`,
-              height: `${Math.random() * 2}px`,
-              opacity: Math.random(),
-              animation: `pulse ${2 + Math.random() * 4}s infinite ease-in-out`
-            }}
-          />
-        ))}
+      <div className="absolute inset-0">
+        {[...Array(starCount)].map((_, i) => {
+          const size = Math.random() * 2 + 0.5;
+          const isGlowing = Math.random() > 0.8;
+          return (
+            <div 
+              key={i}
+              className={`absolute rounded-full bg-white will-change-opacity ${isGlowing ? 'shadow-[0_0_15px_rgba(255,255,255,0.7)]' : ''}`}
+              style={{
+                top: `${Math.random() * 100}%`,
+                left: `${Math.random() * 100}%`,
+                width: `${size}px`,
+                height: `${size}px`,
+                opacity: Math.random() * 0.8 + 0.2,
+                animation: `twinkle ${3 + Math.random() * 5}s ease-in-out infinite`
+              }}
+            />
+          );
+        })}
       </div>
       
-      {/* Shooting Stars */}
-      {[...Array(shootingStarCount)].map((_, i) => (
-        <motion.div
-          key={`shooting-star-${i}`}
-          initial={{ x: "-20%", y: "-20%", opacity: 0 }}
-          animate={{ 
-            x: ["0%", "140%"], 
-            y: ["0%", "90%"],
-            opacity: [0, 1, 0]
-          }}
-          transition={{ 
-            duration: 0.8 + Math.random() * 0.7, 
-            repeat: Infinity, 
-            repeatDelay: 2 + Math.random() * 8,
-            delay: i * 2
-          }}
-          className="absolute w-60 h-[1px] bg-gradient-to-r from-transparent via-sun/40 to-transparent -rotate-45 will-change-transform"
-        />
-      ))}
+      {/* Moving Stars / Nebula Effect */}
+      <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]" />
 
       {/* Nebula atmosphere */}
-      <div className="absolute top-1/4 -left-1/4 w-[800px] h-[800px] bg-sun/5 blur-[150px] rounded-full opacity-20" />
+      <div className="absolute top-1/4 -left-1/4 w-[800px] h-[800px] bg-sun/10 blur-[150px] rounded-full opacity-30" />
       <div className="absolute bottom-1/4 -right-1/4 w-[800px] h-[800px] bg-magic-purple/5 blur-[150px] rounded-full opacity-20" />
+
+      <style>{`
+        @keyframes twinkle {
+          0%, 100% { opacity: 0.3; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.1); }
+        }
+      `}</style>
     </div>
   );
 });
 
-const MessageItem = React.memo(({ msg, idx, yueStatus }: { msg: any, idx: number, yueStatus: string }) => {
+const MessageItem = React.memo(({ msg, idx, yueStatus, onRetry }: { msg: any, idx: number, yueStatus: string, onRetry?: (originalIdx: number) => void }) => {
   if (msg.role === 'user') {
     return (
       <motion.div 
         key={`user-${idx}`}
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 5 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
         className="flex justify-end pr-4 lg:pr-8"
       >
-        <div className="max-w-[80%] bg-sun/10 border border-sun/20 px-6 py-3 rounded-3xl rounded-tr-none shadow-xl backdrop-blur-sm relative group overflow-hidden">
-          <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-20 transition-opacity">
+        <div 
+          onClick={() => onRetry && onRetry(msg.originalIdx)}
+          className="max-w-[80%] bg-sun/10 border border-sun/20 px-6 py-3 rounded-3xl rounded-tr-none shadow-xl backdrop-blur-sm relative group overflow-hidden cursor-pointer hover:bg-sun/20 transition-all"
+        >
+          <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-40 transition-opacity">
              <Zap size={40} className="text-sun" />
+          </div>
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+             <div className="bg-sun/30 p-1 rounded-full text-sun">
+                <RefreshCw size={12} />
+             </div>
           </div>
           <p className="text-[10px] text-sun font-black uppercase tracking-[0.3em] mb-2 opacity-60 font-display">Hành trình</p>
           <p className="text-sm lg:text-lg text-white/90 font-medium leading-relaxed font-sans italic">"{msg.parts[0].text}"</p>
@@ -117,8 +120,8 @@ const MessageItem = React.memo(({ msg, idx, yueStatus }: { msg: any, idx: number
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.5 }}
-        className={`prose prose-invert max-w-none markdown-body text-sm lg:text-base relative group font-sans leading-[1.7] tracking-wide text-gray-300/95 italic font-medium ${
+        transition={{ duration: 0.4 }}
+        className={`prose prose-invert max-w-none markdown-body text-sm lg:text-base relative group font-sans leading-[1.7] tracking-wide text-gray-300/95 italic font-medium will-change-opacity ${
           yueStatus === 'Corrupted' ? 'selection:bg-red-500/50' : 'selection:bg-sun/50'
         }`}
       >
@@ -198,17 +201,17 @@ export default function App() {
       { name: "The Hope", collected: false },
     ],
     choices: [
-      "Bước đến chỗ Yukito và Touya, trực tiếp nhìn thẳng vào mắt Yukito và mỉm cười đầy ẩn ý.",
-      "Ngồi một mình ở góc sân trường, tỏa ra áp lực của 'The Sun' để ép các thẻ bài đang lẩn trốn phải lộ diện.",
-      "Lặng lẽ quan sát Touya từ xa, thể hiện sự đố kỵ."
+      "Bước qua chỗ Yukito và Touya, lạnh lùng cao ngạo không dễ tiếp cận.",
+      "Ngồi một mình trên sân thượng, tỏa ra áp lực của 'The Sun' để ép 'The Dark' đang lẩn trốn phải lộ diện.",
+      "Lặng lẽ quan sát nhóm nhân vật chính từ xa, thể hiện khí chất bí ẩn."
     ],
     yueStatus: 'Normal',
     zeroProfile: {
       mood: "Điềm tĩnh (Lạnh lùng)",
       health: ["Debuff: Linh hồn bị trọng thương"],
-      power: "Thượng cổ Mặt Trời (Bản nguyên)",
-      attribute: "Hỏa / Quang",
-      age: "Thượng cổ (Vô định)"
+      power: "Mặt Trời thượng cổ",
+      attribute: "Cực hạn Hỏa/Quang",
+      age: "Thượng cổ"
     },
     affinityStatus: {
       yue: "Người lạ",
@@ -218,6 +221,7 @@ export default function App() {
       syaoran: "Người lạ",
       tomoyo: "Người lạ"
     },
+    currentChapter: 1,
     characterThoughts: [],
     affinityChanges: [],
     history: [
@@ -226,14 +230,14 @@ export default function App() {
         affinity: { yue: 0, eriol: 0, touya: 0, sakura: 0, syaoran: 0, tomoyo: 0 },
         rumors: ["Cậu học sinh mới Zero có màu tóc giống hệt ngọn lửa, nghe nói cậu ta cực kỳ khó gần."],
         quests: {
-          main: ["[The First Encounter] Tiếp cận Yukito khi cậu ấy đang ăn trưa để gieo rắc sự hiện diện của The Sun."],
+          main: ["Thu phục 'The Dark' bằng quyền năng mạnh mẽ."],
           side: ["Tìm hiểu về môi trường học tập mới tại Tomoeda."]
         },
         yueStatus: 'Normal',
         choices: [
-          "Bước đến chỗ Yukito và Touya, trực tiếp nhìn thẳng vào mắt Yukito và mỉm cười đầy ẩn ý.",
-          "Ngồi một mình ở góc sân trường, tỏa ra áp lực của 'The Sun' để ép các thẻ bài đang lẩn trốn phải lộ diện.",
-          "Lặng lẽ quan sát Touya từ xa, thể hiện sự đố kỵ."
+          "Bước qua chỗ Yukito và Touya, lạnh lùng cao ngạo không dễ tiếp cận.",
+          "Ngồi một mình trên sân thượng, tỏa ra áp lực của 'The Sun' để ép 'The Dark' đang lẩn trốn phải lộ diện.",
+          "Lặng lẽ quan sát nhóm nhân vật chính từ xa, thể hiện khí chất bí ẩn."
         ]
       }) }] }
     ]
@@ -264,8 +268,41 @@ export default function App() {
   }, [gameState.affinityChanges]);
 
   const filteredHistory = React.useMemo(() => 
-    gameState.history.filter(m => !m.isSystem),
+    gameState.history
+      .map((m, originalIdx) => ({ ...m, originalIdx }))
+      .filter(m => !m.isSystem),
   [gameState.history]);
+
+  const handleRetryAt = (originalIdx: number) => {
+    if (isTyping) return;
+    
+    // Safety check: Don't retry the very first system message
+    if (originalIdx <= 0) return;
+
+    const history = [...gameState.history];
+    const userMsg = history[originalIdx];
+    if (!userMsg || userMsg.role !== 'user') return;
+
+    const previousModelMsg = history[originalIdx - 1];
+    if (!previousModelMsg || previousModelMsg.role !== 'model') return;
+
+    try {
+      const savedState = JSON.parse(previousModelMsg.parts[0].text);
+      const historyBefore = history.slice(0, originalIdx);
+      
+      setGameState(prev => ({
+        ...prev,
+        ...savedState,
+        history: historyBefore,
+        // Reset choices to what was available at that point
+        choices: savedState.choices || prev.choices
+      }));
+      
+      // We don't automatically call handleAction(prompt) so the user can choose differently
+    } catch (e) {
+      console.error("Retry failed:", e);
+    }
+  };
 
   useEffect(() => {
     const scrollContainer = scrollRef.current;
@@ -277,15 +314,16 @@ export default function App() {
     }
   }, [filteredHistory.length, gameState.characterThoughts, isTyping]);
 
-  const [activeMiniApp, setActiveMiniApp] = useState<{ type: 'rumor' | 'quest' | 'profile' | 'thoughts' | 'cards', content: string } | null>(null);
+  const [activeMiniApp, setActiveMiniApp] = useState<{ type: 'rumor' | 'quest' | 'profile' | 'thoughts' | 'cards' | 'chapters', content: string } | null>(null);
 
-  const moodPool = ["Điềm tĩnh", "Lười biếng", "Gắt gỏng (Tsundere)", "Hoài niệm", "Hơi cáu"];
+  const moodPool = ["Điềm tĩnh", "Lười biếng", "Gắt gỏng (Tsundere)", "Hoài niệm", "Hơi cáu", "Thất vọng", "Bi quan", "Thờ ơ"];
   const healthPool = [
     "Khỏe mạnh (Tạm thời)", 
     "Debuff: Linh hồn bị trọng thương", 
     "Debuff: Ma lực cạn kiệt", 
-    "Debuff: Xung đột hắc ám",
-    "Debuff: Kiệt sức (Cần ngủ)"
+    "Debuff: Xung đột ma lực",
+    "Debuff: Kiệt sức (Cần ngủ)",
+    "Debuff: Lười biếng"
   ];
 
   useEffect(() => {
@@ -319,6 +357,7 @@ export default function App() {
       const newHealth = [healthPool[Math.floor(Math.random() * healthPool.length)]];
       setGameState(prev => ({
         ...prev,
+        currentChapter: prev.currentChapter || 1,
         zeroProfile: {
           ...prev.zeroProfile,
           mood: newMood,
@@ -362,7 +401,8 @@ export default function App() {
           collected: gameState.cards?.filter(c => c.collected).length || 0, 
           total: gameState.cards?.length || 52 
         },
-        gameState.usedQuests
+        gameState.usedQuests,
+        gameState.currentChapter || 1
       );
       
       setGameState(prev => {
@@ -411,7 +451,7 @@ export default function App() {
   };
 
   const isEndgame = gameState.cards?.every(c => c.collected) || false;
-  const ProfileText = isEndgame ? "Hình thái: Sư tử nhỏ / Lá bài Sun" : "Hình thái: Zero (Thượng cổ)";
+  const ProfileText = isEndgame ? "Hình thái: Sư tử nhỏ / Lá bài The Sun" : "Hình thái: Zero (Thượng cổ)" : "Hình thái: Zero (Học sinh cấp 3)";
 
   if (appState === 'loading') {
     return <LoadingScreen progress={progress} />;
@@ -516,8 +556,8 @@ export default function App() {
                   {gameState.yueStatus === 'Corrupted' 
                     ? 'Sự chiếm hữu cực đoan.' 
                     : gameState.yueStatus === 'Observing' 
-                    ? 'Yue đang lặng lẽ theo dõi bạn.' 
-                    : 'Lặng im.'}
+                    ? 'Yue đang lặng lẽ quan sát bạn.' 
+                    : 'Yue đang im lặng.'}
                 </span>
               </div>
             </div>
@@ -553,6 +593,26 @@ export default function App() {
               <span>Dự ngôn giả</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
+              <motion.button
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setActiveMiniApp({ type: 'chapters', content: '' })}
+                className="flex flex-col items-center justify-center p-4 rounded-2xl bg-sun/10 border border-sun/30 gap-3 group transition-all hover:bg-sun/20 shadow-lg col-span-2 overflow-hidden relative"
+              >
+                <div className="absolute top-0 right-0 p-2 opacity-10">
+                   <Scroll size={40} />
+                </div>
+                <div className="p-2.5 rounded-xl bg-sun/20 text-sun group-hover:scale-110 transition-transform relative z-10">
+                  <Scroll size={20} />
+                </div>
+                <div className="flex flex-col items-center relative z-10">
+                  <span className="text-[10px] font-black text-sun uppercase tracking-widest font-display">Hành trình cốt truyện</span>
+                  <span className="text-[8px] text-sun/60 font-bold uppercase tracking-tighter mt-1">
+                    {STORY_CHAPTERS[(gameState.currentChapter || 1) - 1]?.title}
+                  </span>
+                </div>
+              </motion.button>
+              
               <motion.button
                 whileHover={{ scale: 1.05, y: -2 }}
                 whileTap={{ scale: 0.95 }}
@@ -642,8 +702,8 @@ export default function App() {
                   </div>
                   <div>
                     <h2 className="text-sm font-bold text-white uppercase tracking-widest">
-                      {activeMiniApp.type === 'rumor' ? 'Bảng Tin Đồn Linh Hồn' : 
-                       activeMiniApp.type === 'thoughts' ? 'Hồi Ức Tâm Linh' :
+                      {activeMiniApp.type === 'rumor' ? 'Bảng Tin Đồn' : 
+                       activeMiniApp.type === 'thoughts' ? 'Suy nghĩ thầm kín' :
                        activeMiniApp.type === 'cards' ? 'Clow Cards Collection' :
                        'The Sun'}
                     </h2>
@@ -658,7 +718,64 @@ export default function App() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                {activeMiniApp.type === 'profile' ? (
+                {activeMiniApp.type === 'chapters' ? (
+                  <div className="max-w-4xl mx-auto space-y-8 pb-12">
+                     <div className="text-center mb-10">
+                        <h3 className="text-2xl font-black text-white uppercase tracking-widest font-display">Hành trình cốt truyện</h3>
+                        <div className="w-24 h-1 bg-sun mx-auto mt-2 rounded-full opacity-50" />
+                     </div>
+                     <div className="grid grid-cols-1 gap-4">
+                        {STORY_CHAPTERS.map((chapter) => {
+                          const currentChapter = gameState.currentChapter || 1;
+                          const isUnlocked = currentChapter >= chapter.id;
+                          const isCurrent = currentChapter === chapter.id;
+
+                          return (
+                            <div 
+                              key={chapter.id}
+                              className={`p-6 rounded-2xl border transition-all duration-500 relative overflow-hidden group ${
+                                isUnlocked 
+                                  ? `bg-sun/5 border-sun/30 cursor-pointer hover:bg-sun/10 ${isCurrent ? 'ring-2 ring-sun/50 shadow-[0_0_20px_rgba(255,193,7,0.2)]' : ''}` 
+                                  : 'bg-white/5 border-white/5 opacity-30 grayscale'
+                              }`}
+                            >
+                               <div className="flex items-center justify-between gap-4 relative z-10">
+                                  <div className="flex items-center gap-4">
+                                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black transition-all ${
+                                       isUnlocked 
+                                         ? (isCurrent ? 'bg-sun text-black scale-110' : 'bg-sun/20 text-sun') 
+                                         : 'bg-gray-800 text-gray-600'
+                                     }`}>
+                                        {chapter.id}
+                                     </div>
+                                     <div>
+                                        <div className="flex items-center gap-2">
+                                          <h4 className={`font-black text-sm uppercase tracking-wider transition-colors ${
+                                            isCurrent ? 'text-sun' : isUnlocked ? 'text-white group-hover:text-sun' : 'text-gray-500'
+                                          }`}>
+                                            {chapter.title}
+                                          </h4>
+                                          {isCurrent && <span className="bg-sun/20 text-sun text-[8px] px-2 py-0.5 rounded-full font-black animate-pulse">ĐANG DIỄN RA</span>}
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1 max-w-xl">{chapter.description}</p>
+                                     </div>
+                                  </div>
+                                  {!isUnlocked && (
+                                     <div className="shrink-0 flex items-center gap-2 text-gray-600">
+                                        <Lock size={14} className="opacity-40" />
+                                        <span className="text-[10px] font-bold uppercase tracking-tighter">Bị khóa</span>
+                                     </div>
+                                  )}
+                               </div>
+                               {isUnlocked && (
+                                  <div className="absolute right-0 top-0 h-full w-32 bg-gradient-to-l from-sun/10 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                                )}
+                            </div>
+                          );
+                        })}
+                     </div>
+                  </div>
+                ) : activeMiniApp.type === 'profile' ? (
                   <div className="max-w-2xl mx-auto space-y-10 pb-12">
                     <div className="flex flex-col items-center">
                       <div className="w-32 h-32 rounded-full border-4 border-sun/50 flex items-center justify-center bg-sun/10 sun-glow mb-6 relative group overflow-hidden">
@@ -882,9 +999,14 @@ export default function App() {
             >
               <Users size={20} />
             </button>
-            <div className="flex items-center gap-2 lg:gap-3 min-w-0">
-              <Scroll size={16} className="shrink-0 text-sun lg:w-5 lg:h-5" />
-              <span className="truncate font-display font-black uppercase tracking-widest text-[9px] lg:text-xs">Chương 1: Học sinh chuyển trường</span>
+            <div 
+              onClick={() => setActiveMiniApp({ type: 'chapters', content: '' })}
+              className="flex items-center gap-2 lg:gap-3 min-w-0 cursor-pointer group/chapter"
+            >
+              <Scroll size={16} className="shrink-0 text-sun lg:w-5 lg:h-5 group-hover/chapter:scale-110 transition-transform" />
+              <span className="truncate font-display font-black uppercase tracking-widest text-[9px] lg:text-xs text-white group-hover/chapter:text-sun transition-colors">
+                Chương {gameState.currentChapter || 1}: {STORY_CHAPTERS[(gameState.currentChapter || 1) - 1]?.title}
+              </span>
             </div>
           </div>
           <div className="flex gap-2 shrink-0 ml-2">
@@ -937,7 +1059,7 @@ export default function App() {
           }`}
         >
           {filteredHistory.map((msg, idx) => (
-            <MessageItem key={idx} msg={msg} idx={idx} yueStatus={gameState.yueStatus} />
+            <MessageItem key={idx} msg={msg} idx={idx} yueStatus={gameState.yueStatus} onRetry={handleRetryAt} />
           ))}
 
           {isTyping && (

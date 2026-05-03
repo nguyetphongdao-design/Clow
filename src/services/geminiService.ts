@@ -15,11 +15,13 @@ export async function generateNextTurn(
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
   zeroProfile: any,
   cardsCount?: { collected: number, total: number },
-  usedQuests: string[] = []
+  usedQuests: string[] = [],
+  currentChapter: number = 1
 ): Promise<GameState> {
   const model = "gemini-3-flash-preview";
 
   const contextPrompt = `[ZERO STATUS] Mood: ${zeroProfile.mood}, Health: ${zeroProfile.health}. 
+[CURRENT CHAPTER]: ${currentChapter}.
 [CARDS STATUS]: ${cardsCount ? `${cardsCount.collected} / ${cardsCount.total}` : 'Unknown'} collected.
 [USED QUESTS]: ${usedQuests.join(', ')}. Tuyệt đối không lặp lại các nhiệm vụ trong danh sách này. 
 ${userInput.includes('SYSTEM') ? ' Đây là một tác vụ hệ thống, hãy phản hồi cực kỳ nhanh chóng và tập trung vào dữ liệu JSON.' : ''}`;
