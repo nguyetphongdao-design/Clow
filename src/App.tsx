@@ -153,6 +153,7 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isAuthProcessing, setIsAuthProcessing] = useState(false);
   const [memory, setMemory] = useState<string>('');
+  const isInitialized = useRef(false);
 
   const [gameState, setGameState] = useState<GameState>({
     narrative: INITIAL_NARRATIVE,
@@ -351,12 +352,20 @@ export default function App() {
               setGameState(data.gameState);
             }
             if (data.memory) {
-              setMemory(data.memory);
+              setMemory(data.memory || '');
             }
           }
+          // Mark as initialized after loading data to enable auto-save
+          isInitialized.current = true;
         } catch (error) {
           console.error("Error loading user data:", error);
+          // Still initialize even on error to allow new saves
+          isInitialized.current = true;
         }
+      } else {
+        isInitialized.current = false;
+        // Optional: reset state on logout? The user requirement says "chỉ bắt người dùng đăng nhập 1 lần"
+        // which usually implies persistence across sessions.
       }
     });
 
@@ -365,12 +374,12 @@ export default function App() {
 
   // Save State to Firestore
   const saveToFirebase = async (newState: GameState, newMemory?: string) => {
-    if (!user) return;
+    if (!user || !isInitialized.current) return;
     setIsSaving(true);
     try {
       await setDoc(doc(db, "users", user.uid), {
         gameState: newState,
-        memory: newMemory || memory,
+        memory: newMemory !== undefined ? newMemory : memory,
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (error) {
@@ -379,6 +388,17 @@ export default function App() {
       setIsSaving(false);
     }
   };
+
+  // Debounced Auto-save Effect
+  useEffect(() => {
+    if (!user || !isInitialized.current || isTyping) return;
+
+    const timer = setTimeout(() => {
+      saveToFirebase(gameState);
+    }, 2000); // 2 second debounce for real-time-ish feel without hitting quotas
+
+    return () => clearTimeout(timer);
+  }, [gameState, memory, user]);
 
   // Summarize Memory every 5 messages
   const summarizeHistory = async (history: any[]) => {
@@ -542,6 +562,7 @@ export default function App() {
       
       // Summarize and Save
       const newMemory = await summarizeHistory(finalState.history);
+      // Explict save for immediate feedback after AI interaction
       await saveToFirebase(finalState, newMemory);
 
     } catch (error) {
