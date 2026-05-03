@@ -13,11 +13,14 @@ const ai = new GoogleGenAI({
 export async function generateNextTurn(
   userInput: string,
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
-  zeroProfile: any
+  zeroProfile: any,
+  usedQuests: string[] = []
 ): Promise<GameState> {
   const model = "gemini-3-flash-preview";
 
-  const contextPrompt = `[ZERO STATUS] Mood: ${zeroProfile.mood}, Health: ${zeroProfile.health}. Hãy dựa vào trạng thái này để điều chỉnh văn phong và nội dung nhiệm vụ/lựa chọn.`;
+  const contextPrompt = `[ZERO STATUS] Mood: ${zeroProfile.mood}, Health: ${zeroProfile.health}. 
+[USED QUESTS]: ${usedQuests.join(', ')}. Tuyệt đối không lặp lại các nhiệm vụ trong danh sách này. 
+Hãy dựa vào trạng thái này để điều chỉnh văn phong và nội dung nhiệm vụ/lựa chọn.${userInput.includes('SYSTEM') ? ' Đây là một tác vụ hệ thống, hãy phản hồi cực kỳ nhanh chóng và tập trung vào dữ liệu JSON.' : ''}`;
   
   const response = await ai.models.generateContent({
     model,
@@ -47,7 +50,7 @@ export async function generateNextTurn(
         ? JSON.parse(history[history.length - 1].parts[0].text).affinity 
         : { yue: 0, eriol: 0, touya: 0 },
       rumors: [],
-      quests: [],
+      quests: { main: [], side: [] },
       choices: ["Thử lại"]
     };
   }
@@ -59,9 +62,11 @@ export async function generateNextTurn(
     characterThoughts: content.characterThoughts || [],
     affinityChanges: content.affinityChanges || [],
     rumors: content.rumors || [],
-    quests: content.quests || [],
+    quests: content.quests || { main: [], side: [] },
     choices: content.choices || [],
     affinityStatus: content.affinityStatus || {},
+    // Pass capturedCards back to App.tsx
+    capturedCards: content.capturedCards || [],
     zeroProfile,
     history: [
       ...history,
