@@ -33,15 +33,19 @@ import {
 import { GameState, INITIAL_NARRATIVE } from './types';
 import { generateNextTurn } from './services/geminiService';
 
-function StarryBackground() {
+const StarryBackground = React.memo(() => {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const starCount = isMobile ? 40 : 100;
+  const shootingStarCount = isMobile ? 3 : 6;
+
   return (
     <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-black">
       {/* Static Stars */}
       <div className="absolute inset-0 opacity-30">
-        {[...Array(100)].map((_, i) => (
+        {[...Array(starCount)].map((_, i) => (
           <div 
             key={i}
-            className="absolute rounded-full bg-white"
+            className="absolute rounded-full bg-white will-change-[opacity,transform]"
             style={{
               top: `${Math.random() * 100}%`,
               left: `${Math.random() * 100}%`,
@@ -55,7 +59,7 @@ function StarryBackground() {
       </div>
       
       {/* Shooting Stars */}
-      {[...Array(6)].map((_, i) => (
+      {[...Array(shootingStarCount)].map((_, i) => (
         <motion.div
           key={`shooting-star-${i}`}
           initial={{ x: "-20%", y: "-20%", opacity: 0 }}
@@ -70,7 +74,7 @@ function StarryBackground() {
             repeatDelay: 2 + Math.random() * 8,
             delay: i * 2
           }}
-          className="absolute w-60 h-[1px] bg-gradient-to-r from-transparent via-sun/40 to-transparent -rotate-45"
+          className="absolute w-60 h-[1px] bg-gradient-to-r from-transparent via-sun/40 to-transparent -rotate-45 will-change-transform"
         />
       ))}
 
@@ -79,7 +83,53 @@ function StarryBackground() {
       <div className="absolute bottom-1/4 -right-1/4 w-[800px] h-[800px] bg-magic-purple/5 blur-[150px] rounded-full opacity-20" />
     </div>
   );
-}
+});
+
+const MessageItem = React.memo(({ msg, idx, yueStatus }: { msg: any, idx: number, yueStatus: string }) => {
+  if (msg.role === 'user') {
+    return (
+      <motion.div 
+        key={`user-${idx}`}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex justify-end pr-4 lg:pr-8"
+      >
+        <div className="max-w-[80%] bg-sun/10 border border-sun/20 px-6 py-3 rounded-3xl rounded-tr-none shadow-xl backdrop-blur-sm relative group overflow-hidden">
+          <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-20 transition-opacity">
+             <Zap size={40} className="text-sun" />
+          </div>
+          <p className="text-[10px] text-sun font-black uppercase tracking-[0.3em] mb-2 opacity-60 font-display">Hành trình</p>
+          <p className="text-sm lg:text-lg text-white/90 font-medium leading-relaxed font-sans italic">"{msg.parts[0].text}"</p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  let narrativeData: any = {};
+  try {
+    narrativeData = JSON.parse(msg.parts[0].text);
+  } catch (e) {
+    narrativeData = { narrative: msg.parts[0].text };
+  }
+
+  return (
+    <div key={`model-${idx}`} className="space-y-6 relative">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        className={`prose prose-invert max-w-none markdown-body text-sm lg:text-base relative group font-sans leading-[1.7] tracking-wide text-gray-300/95 italic font-medium ${
+          yueStatus === 'Corrupted' ? 'selection:bg-red-500/50' : 'selection:bg-sun/50'
+        }`}
+      >
+        <ReactMarkdown>{narrativeData.narrative || narrativeData.text || ''}</ReactMarkdown>
+      </motion.div>
+      <div className="flex justify-center py-4 opacity-20">
+         <div className="w-32 h-px bg-gradient-to-r from-transparent via-sun to-transparent" />
+      </div>
+    </div>
+  );
+});
 
 export default function App() {
   const [appState, setAppState] = useState<'loading' | 'starting' | 'main'>('loading');
@@ -213,11 +263,19 @@ export default function App() {
     }
   }, [gameState.affinityChanges]);
 
+  const filteredHistory = React.useMemo(() => 
+    gameState.history.filter(m => !m.isSystem),
+  [gameState.history]);
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const scrollContainer = scrollRef.current;
+    if (scrollContainer) {
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: 'smooth'
+      });
     }
-  }, [gameState.narrative, gameState.characterThoughts]);
+  }, [filteredHistory.length, gameState.characterThoughts, isTyping]);
 
   const [activeMiniApp, setActiveMiniApp] = useState<{ type: 'rumor' | 'quest' | 'profile' | 'thoughts' | 'cards', content: string } | null>(null);
 
@@ -233,7 +291,7 @@ export default function App() {
   useEffect(() => {
     if (appState === 'loading') {
       const startTime = Date.now();
-      const duration = 2500; // 2.5 seconds total loading
+      const duration = 1200; // 1.2 seconds total loading
 
       const timer = setInterval(() => {
         const elapsed = Date.now() - startTime;
@@ -280,11 +338,25 @@ export default function App() {
     setIsTyping(true);
     setUserInput('');
     setIsSidebarOpen(false); // Close sidebar on mobile action
+
+    // Immediate scroll to show the user's message
+    setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, 50);
     
     try {
+      // Limit history to last 12-15 entries to maintain context around 1000-1500 words
+      const fullHistory = gameState.history.filter(h => h.role !== 'user' || !h.isSystem);
+      const historyToKeep = 15;
+      const trimmedHistory = fullHistory.length > historyToKeep 
+        ? [fullHistory[0], ...fullHistory.slice(-historyToKeep)] 
+        : fullHistory;
+
       const nextTurn = await generateNextTurn(
         input, 
-        gameState.history.filter(h => h.role !== 'user' || !h.isSystem), 
+        trimmedHistory, 
         gameState.zeroProfile,
         gameState.usedQuests
       );
@@ -855,51 +927,9 @@ export default function App() {
             gameState.yueStatus === 'Corrupted' ? 'shadow-[inset_0_0_100px_rgba(220,38,38,0.15)] bg-red-950/5' : ''
           }`}
         >
-          {gameState.history.filter(m => !m.isSystem).map((msg, idx) => {
-            if (msg.role === 'user') {
-              return (
-                <motion.div 
-                  key={`user-${idx}`}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex justify-end pr-4 lg:pr-8"
-                >
-                  <div className="max-w-[80%] bg-sun/10 border border-sun/20 px-6 py-3 rounded-3xl rounded-tr-none shadow-xl backdrop-blur-sm relative group overflow-hidden">
-                    <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-20 transition-opacity">
-                       <Zap size={40} className="text-sun" />
-                    </div>
-                    <p className="text-[10px] text-sun font-black uppercase tracking-[0.3em] mb-2 opacity-60 font-display">Hành trình</p>
-                    <p className="text-sm lg:text-lg text-white/90 font-medium leading-relaxed font-sans italic">"{msg.parts[0].text}"</p>
-                  </div>
-                </motion.div>
-              );
-            }
-
-            let narrativeData: any = {};
-            try {
-              narrativeData = JSON.parse(msg.parts[0].text);
-            } catch (e) {
-              narrativeData = { narrative: msg.parts[0].text };
-            }
-
-            return (
-              <div key={`model-${idx}`} className="space-y-6 relative">
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 1 }}
-                  className={`prose prose-invert max-w-none markdown-body text-sm lg:text-base relative group font-sans leading-[1.7] tracking-wide text-gray-300/95 italic font-medium ${
-                    gameState.yueStatus === 'Corrupted' ? 'selection:bg-red-500/50' : 'selection:bg-sun/50'
-                  }`}
-                >
-                  <ReactMarkdown>{narrativeData.narrative || narrativeData.text || ''}</ReactMarkdown>
-                </motion.div>
-                <div className="flex justify-center py-4 opacity-20">
-                   <div className="w-32 h-px bg-gradient-to-r from-transparent via-sun to-transparent" />
-                </div>
-              </div>
-            );
-          })}
+          {filteredHistory.map((msg, idx) => (
+            <MessageItem key={idx} msg={msg} idx={idx} yueStatus={gameState.yueStatus} />
+          ))}
 
           {isTyping && (
             <div className="flex gap-2 items-center text-sun/60 italic text-[10px] lg:text-xs animate-pulse">
@@ -961,7 +991,7 @@ export default function App() {
                 onKeyDown={(e) => e.key === 'Enter' && handleAction(userInput)}
                 placeholder="Nhập hành động của bạn..."
                 disabled={isTyping}
-                className="w-full h-11 lg:h-12 pl-4 pr-14 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-sun/50 focus:ring-1 focus:ring-sun/20 transition-all text-xs lg:text-sm disabled:opacity-50"
+                className="w-full h-11 lg:h-12 pl-4 pr-14 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-sun/50 focus:ring-1 focus:ring-sun/20 transition-all text-base lg:text-sm disabled:opacity-50"
               />
               <button 
                 onClick={() => handleAction(userInput)}
