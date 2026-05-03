@@ -329,7 +329,7 @@ export default function App() {
   useEffect(() => {
     if (appState === 'loading') {
       const startTime = Date.now();
-      const duration = 1200; // 1.2 seconds total loading
+      const duration = 1200;
 
       const timer = setInterval(() => {
         const elapsed = Date.now() - startTime;
@@ -338,9 +338,17 @@ export default function App() {
         if (rawProgress >= 100) {
           setProgress(100);
           clearInterval(timer);
-          setTimeout(() => setAppState('starting'), 500);
+          
+          setTimeout(() => {
+             // Kiểm tra xem trình duyệt đã có thẻ nhớ của người dùng chưa
+             if (auth.currentUser) {
+                setAppState('main'); // Đã đăng nhập -> Bỏ qua StartScreen, vào thẳng game
+             } else {
+                setAppState('starting'); // Chưa đăng nhập -> Hiện StartScreen để hiện nút Đăng nhập
+             }
+          }, 500);
+
         } else {
-          // Add a bit of "noise" for a more realistic feel
           const jitter = Math.sin(elapsed / 100) * 2;
           setProgress(Math.min(99, rawProgress + jitter));
         }
@@ -348,7 +356,7 @@ export default function App() {
       
       return () => clearInterval(timer);
     }
-  }, [appState]);
+  }, [appState, user]); // Thêm 'user' vào đây để React biết cập nhật khi trạng thái đăng nhập thay đổi
 
   useEffect(() => {
     // Randomize mood and health on mount and every hour
@@ -451,7 +459,7 @@ export default function App() {
   };
 
   const isEndgame = gameState.cards?.every(c => c.collected) || false;
-  const ProfileText = isEndgame ? "Hình thái: Sư tử nhỏ / Lá bài The Sun" : "Hình thái: Zero (Thượng cổ)" : "Hình thái: Zero (Học sinh cấp 3)";
+  const ProfileText = isEndgame ? "Hình thái: Sư tử nhỏ / Lá bài The Sun" : "Hình thái: Zero (Thượng cổ)";
 
   if (appState === 'loading') {
     return <LoadingScreen progress={progress} />;
