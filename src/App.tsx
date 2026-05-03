@@ -29,10 +29,17 @@ import {
   Ghost,
   Heart,
   RefreshCw,
-  Lock
+  Lock,
+  LogOut,
+  User as UserIcon,
+  Loader2
 } from 'lucide-react';
 import { GameState, INITIAL_NARRATIVE, STORY_CHAPTERS } from './types';
 import { generateNextTurn } from './services/geminiService';
+import { auth, db, googleProvider } from './firebase';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User, signInWithPopup } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { GoogleGenAI } from '@google/genai';
 
 const StarryBackground = React.memo(() => {
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -137,6 +144,16 @@ const MessageItem = React.memo(({ msg, idx, yueStatus, onRetry }: { msg: any, id
 export default function App() {
   const [appState, setAppState] = useState<'loading' | 'starting' | 'main'>('loading');
   const [progress, setProgress] = useState(0);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isAuthProcessing, setIsAuthProcessing] = useState(false);
+  const [memory, setMemory] = useState<string>('');
+
   const [gameState, setGameState] = useState<GameState>({
     narrative: INITIAL_NARRATIVE,
     affinity: { yue: 0, eriol: 0, touya: 0, sakura: 0, syaoran: 0, tomoyo: 0 },
@@ -316,6 +333,79 @@ export default function App() {
 
   const [activeMiniApp, setActiveMiniApp] = useState<{ type: 'rumor' | 'quest' | 'profile' | 'thoughts' | 'cards' | 'chapters', content: string } | null>(null);
 
+  // Authentication State Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+      
+      if (currentUser) {
+        // Load data from Firestore
+        try {
+          const docRef = doc(db, "users", currentUser.uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.gameState) {
+              setGameState(data.gameState);
+            }
+            if (data.memory) {
+              setMemory(data.memory);
+            }
+          }
+        } catch (error) {
+          console.error("Error loading user data:", error);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Save State to Firestore
+  const saveToFirebase = async (newState: GameState, newMemory?: string) => {
+    if (!user) return;
+    setIsSaving(true);
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        gameState: newState,
+        memory: newMemory || memory,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (error) {
+      console.error("Error saving user data:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Summarize Memory every 5 messages
+  const summarizeHistory = async (history: any[]) => {
+    const userMessages = history.filter(h => h.role === 'user' && !h.isSystem);
+    if (userMessages.length > 0 && userMessages.length % 5 === 0) {
+      console.log("Summarizing history into memory...");
+      try {
+        const genAI = new GoogleGenAI({ apiKey: (process.env as any).GEMINI_API_KEY || '' });
+        
+        const historyText = history.map(h => `${h.role}: ${h.parts[0].text}`).join('\n');
+        const prompt = `Bạn là hệ thống ghi nhớ của game. Hãy tóm tắt ngắn gọn các sự kiện quan trọng, mối quan hệ và cảm xúc của các nhân vật trong đoạn hội thoại sau thành một đoạn văn ngắn (dưới 100 từ). Hãy giữ context này để sử dụng cho các lần chat sau.\n\nLịch sử chat:\n${historyText}\n\nKý ức hiện tại: ${memory}`;
+        
+        const result = await genAI.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+        
+        const newSummary = result.text || '';
+        setMemory(newSummary);
+        return newSummary;
+      } catch (error) {
+        console.error("Summarization failed:", error);
+      }
+    }
+    return memory;
+  };
+
   const moodPool = ["Điềm tĩnh", "Lười biếng", "Gắt gỏng (Tsundere)", "Hoài niệm", "Hơi cáu", "Thất vọng", "Bi quan", "Thờ ơ"];
   const healthPool = [
     "Khỏe mạnh (Tạm thời)", 
@@ -329,7 +419,7 @@ export default function App() {
   useEffect(() => {
     if (appState === 'loading') {
       const startTime = Date.now();
-      const duration = 1200;
+      const duration = 1200; // 1.2 seconds total loading
 
       const timer = setInterval(() => {
         const elapsed = Date.now() - startTime;
@@ -338,17 +428,9 @@ export default function App() {
         if (rawProgress >= 100) {
           setProgress(100);
           clearInterval(timer);
-          
-          setTimeout(() => {
-             // Kiểm tra xem trình duyệt đã có thẻ nhớ của người dùng chưa
-             if (auth.currentUser) {
-                setAppState('main'); // Đã đăng nhập -> Bỏ qua StartScreen, vào thẳng game
-             } else {
-                setAppState('starting'); // Chưa đăng nhập -> Hiện StartScreen để hiện nút Đăng nhập
-             }
-          }, 500);
-
+          setTimeout(() => setAppState('starting'), 500);
         } else {
+          // Add a bit of "noise" for a more realistic feel
           const jitter = Math.sin(elapsed / 100) * 2;
           setProgress(Math.min(99, rawProgress + jitter));
         }
@@ -356,7 +438,7 @@ export default function App() {
       
       return () => clearInterval(timer);
     }
-  }, [appState, user]); // Thêm 'user' vào đây để React biết cập nhật khi trạng thái đăng nhập thay đổi
+  }, [appState]);
 
   useEffect(() => {
     // Randomize mood and health on mount and every hour
@@ -394,15 +476,19 @@ export default function App() {
     }, 50);
     
     try {
-      // Limit history to last 12-15 entries to maintain context around 1000-1500 words
+      // Limit history to last 12-15 entries to maintain context
       const fullHistory = gameState.history.filter(h => h.role !== 'user' || !h.isSystem);
       const historyToKeep = 15;
       const trimmedHistory = fullHistory.length > historyToKeep 
         ? [fullHistory[0], ...fullHistory.slice(-historyToKeep)] 
         : fullHistory;
 
+      // Add memory context to prompt if available
+      const memoryPrompt = memory ? `\n[BỐI CẢNH/KÝ ỨC CŨ]: ${memory}\n` : '';
+      const richInput = `${memoryPrompt}${input}`;
+
       const nextTurn = await generateNextTurn(
-        input, 
+        richInput, 
         trimmedHistory, 
         gameState.zeroProfile,
         { 
@@ -413,7 +499,7 @@ export default function App() {
         gameState.currentChapter || 1
       );
       
-      setGameState(prev => {
+      const newGameState = (prev: GameState): GameState => {
         // Merge newly captured cards
         const newlyCaptured: string[] = (nextTurn as any).capturedCards || [];
         const currentCards = prev.cards || [];
@@ -438,7 +524,6 @@ export default function App() {
           }
         }
 
-        // If it was a system action (like refresh), we update stats/quests but NOT the main narrative text and NOT affinity
         return { 
           ...nextTurn, 
           narrative: isSystem ? prev.narrative : nextTurn.narrative,
@@ -450,7 +535,15 @@ export default function App() {
           zeroProfile: prev.zeroProfile,
           usedQuests: Array.from(new Set(updatedUsedQuests)) // Deduplicate
         };
-      });
+      };
+
+      const finalState = newGameState(gameState);
+      setGameState(finalState);
+      
+      // Summarize and Save
+      const newMemory = await summarizeHistory(finalState.history);
+      await saveToFirebase(finalState, newMemory);
+
     } catch (error) {
       console.error("Lỗi rồi bạn ơi:", error);
     } finally {
@@ -458,15 +551,84 @@ export default function App() {
     }
   };
 
-  const isEndgame = gameState.cards?.every(c => c.collected) || false;
-  const ProfileText = isEndgame ? "Hình thái: Sư tử nhỏ / Lá bài The Sun" : "Hình thái: Zero (Thượng cổ)";
+  const getVietnameseError = (errorMessage: string) => {
+    if (errorMessage.includes('auth/invalid-credential')) return "Email hoặc mật khẩu không chính xác.";
+    if (errorMessage.includes('auth/user-not-found')) return "Người dùng không tồn tại.";
+    if (errorMessage.includes('auth/wrong-password')) return "Mật khẩu không chính xác.";
+    if (errorMessage.includes('auth/email-already-in-use')) return "Email đã được sử dụng.";
+    if (errorMessage.includes('auth/weak-password')) return "Mật khẩu quá yếu (tối thiểu 6 ký tự).";
+    if (errorMessage.includes('auth/invalid-email')) return "Email không hợp lệ.";
+    if (errorMessage.includes('auth/operation-not-allowed')) return "Phương thức đăng nhập này chưa được kích hoạt trong Firebase Console.";
+    if (errorMessage.includes('auth/popup-closed-by-user')) return "Cửa sổ đăng nhập đã bị đóng.";
+    if (errorMessage.includes('auth/cancelled-popup-request')) return "Yêu cầu đăng nhập đã bị hủy.";
+    return "Đã xảy ra lỗi: " + errorMessage;
+  };
 
-  if (appState === 'loading') {
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setIsAuthProcessing(true);
+    try {
+      if (isLoginMode) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      console.error("Auth error:", err);
+      setAuthError(getVietnameseError(err.message));
+    } finally {
+      setIsAuthProcessing(false);
+    }
+  };
+
+  const handleGoogleAuth = async () => {
+    setAuthError(null);
+    setIsAuthProcessing(true);
+    try {
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      console.error("Google auth error:", err);
+      setAuthError(getVietnameseError(err.message));
+    } finally {
+      setIsAuthProcessing(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      // Reset state on logout if needed, but user might want to keep playing locally
+    } catch (err: any) {
+      console.error("Sign out error:", err);
+    }
+  };
+
+  const isEndgame = gameState.cards?.every(c => c.collected) || false;
+  const ProfileText = isEndgame ? "Hình thái: Sư tử nhỏ / Lá bài The Sun" : "Hình thái: Zero (Học sinh cấp 3)";
+
+  if (appState === 'loading' || authLoading) {
     return <LoadingScreen progress={progress} />;
   }
 
   if (appState === 'starting') {
-    return <StartScreen onStart={() => setAppState('main')} />;
+    return (
+      <StartScreen 
+        onStart={() => setAppState('main')} 
+        user={user}
+        authError={authError}
+        email={email}
+        setEmail={setEmail}
+        password={password}
+        setPassword={setPassword}
+        isLoginMode={isLoginMode}
+        setIsLoginMode={setIsLoginMode}
+        handleAuth={handleAuth}
+        handleGoogleAuth={handleGoogleAuth}
+        isSaving={isSaving || isAuthProcessing}
+      />
+    );
   }
 
   return (
@@ -1018,6 +1180,21 @@ export default function App() {
             </div>
           </div>
           <div className="flex gap-2 shrink-0 ml-2">
+            {user && (
+              <div className="hidden sm:flex items-center gap-2 mr-2">
+                <div className="flex flex-col items-end">
+                   <span className="text-[8px] font-black text-sun/60 uppercase tracking-widest leading-none">Hành giả</span>
+                   <span className="text-[10px] text-white/50 truncate max-w-[100px] font-medium">{user.email?.split('@')[0]}</span>
+                </div>
+                <button 
+                  onClick={handleSignOut}
+                  className="p-1.5 rounded-full hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20"
+                  title="Đăng xuất"
+                >
+                  <LogOut size={14} />
+                </button>
+              </div>
+            )}
             <button 
               onClick={() => {
                 if (isTyping) return;
@@ -1290,9 +1467,36 @@ function LoadingScreen({ progress }: { progress: number }) {
   );
 }
 
-function StartScreen({ onStart }: { onStart: () => void }) {
+function StartScreen({ 
+  onStart, 
+  user, 
+  authError, 
+  email, 
+  setEmail, 
+  password, 
+  setPassword, 
+  isLoginMode, 
+  setIsLoginMode, 
+  handleAuth,
+  handleGoogleAuth,
+  isSaving
+}: { 
+  onStart: () => void, 
+  user: User | null, 
+  authError: string | null,
+  email: string,
+  setEmail: (s: string) => void,
+  password: string,
+  setPassword: (s: string) => void,
+  isLoginMode: boolean,
+  setIsLoginMode: (b: boolean) => void,
+  handleAuth: (e: React.FormEvent) => void,
+  handleGoogleAuth: () => void,
+  isSaving: boolean
+}) {
   return (
     <div className="fixed inset-0 bg-deep-space flex flex-col items-center justify-center p-6 z-[100] overflow-hidden">
+      <StarryBackground />
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[300px] h-[300px] bg-sun/5 blur-[100px] rounded-full" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[300px] h-[300px] bg-magic-purple/5 blur-[100px] rounded-full" />
@@ -1303,14 +1507,14 @@ function StartScreen({ onStart }: { onStart: () => void }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1 }}
-        className="relative z-10 text-center max-w-sm w-full space-y-10"
+        className="relative z-10 text-center max-w-sm w-full space-y-8"
       >
-        <div className="space-y-6">
+        <div className="space-y-4">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 100, damping: 30 }}
-            className="relative w-24 h-24 mx-auto"
+            className="relative w-20 h-20 mx-auto"
           >
             <motion.div
               animate={{ rotate: 360 }}
@@ -1318,7 +1522,7 @@ function StartScreen({ onStart }: { onStart: () => void }) {
               className="absolute inset-0 border border-sun/10 rounded-full"
             />
             <div className="absolute inset-[14px] bg-gradient-to-b from-sun/10 to-transparent rounded-full border border-sun/20 flex items-center justify-center backdrop-blur-md">
-               <Sun className="w-10 h-10 text-sun/80" />
+               <Sun className="w-8 h-8 text-sun/80" />
             </div>
           </motion.div>
 
@@ -1327,44 +1531,146 @@ function StartScreen({ onStart }: { onStart: () => void }) {
               initial={{ y: 5, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.2 }}
-              className="text-3xl md:text-4xl font-black text-white uppercase leading-none font-display tracking-[0.2em] text-gradient"
+              className="text-2xl md:text-3xl font-black text-white uppercase leading-none font-display tracking-[0.2em] text-gradient"
             >
                Sakura
-               <span className="text-[10px] md:text-xs tracking-[0.5em] font-black uppercase text-sun/50 block mt-3 font-display">Memory Protocol</span>
+               <span className="text-[8px] md:text-[10px] tracking-[0.5em] font-black uppercase text-sun/50 block mt-2 font-display">Resonance</span>
             </motion.h1>
-            <div className="h-[1px] w-12 bg-gradient-to-r from-transparent via-sun/30 to-transparent mx-auto mt-4" />
+            <div className="h-[1px] w-10 bg-gradient-to-r from-transparent via-sun/30 to-transparent mx-auto mt-2" />
           </div>
-          
-          <p className="text-gray-400 text-[10px] md:text-xs max-w-[200px] mx-auto italic font-medium leading-relaxed opacity-40 font-sans tracking-[0.05em] px-2 italic">
-            "Ánh dương sẽ dệt lại định mệnh."
-          </p>
         </div>
 
-        <motion.div
-          initial={{ y: 10, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="flex flex-col items-center"
-        >
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onStart}
-            className="group relative px-10 py-3 bg-sun text-deep-space font-black uppercase tracking-[0.4em] text-[10px] md:text-xs rounded-full overflow-hidden transition-all shadow-xl font-display"
+        {!user ? (
+          <motion.div 
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="bg-white/5 border border-white/10 p-6 rounded-3xl backdrop-blur-lg space-y-4"
           >
-            BẮT ĐẦU
-          </motion.button>
-        </motion.div>
+            <div className="flex justify-between items-center mb-2 px-1">
+               <span className="text-[10px] font-black text-sun/60 uppercase tracking-widest">{isLoginMode ? 'Đăng nhập' : 'Đăng ký'}</span>
+               <button 
+                 onClick={() => setIsLoginMode(!isLoginMode)}
+                 className="text-[9px] text-gray-500 hover:text-white transition-colors uppercase font-bold"
+               >
+                 {isLoginMode ? 'Cần tài khoản?' : 'Đã có tài khoản?'}
+               </button>
+            </div>
+            
+            <form onSubmit={handleAuth} className="space-y-3">
+              <div className="relative">
+                <UserIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email của bạn"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-sun/40 transition-all"
+                  required
+                />
+              </div>
+              <div className="relative">
+                <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Mật khẩu"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-sun/40 transition-all"
+                  required
+                />
+              </div>
+              
+              {authError && (
+                <p className="text-[9px] text-red-400 font-medium px-1 leading-tight">{authError}</p>
+              )}
+              
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="w-full py-3 bg-sun text-deep-space font-black uppercase tracking-[0.2em] text-[10px] rounded-xl hover:scale-[1.02] transition-transform active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSaving && <Loader2 size={14} className="animate-spin" />}
+                {isLoginMode ? 'Đăng nhập' : 'Đăng ký'}
+              </button>
+            </form>
+            
+            <button
+              onClick={handleGoogleAuth}
+              disabled={isSaving}
+              className="w-full py-3 bg-white border border-white/20 text-deep-space font-black uppercase tracking-[0.1em] text-[9px] rounded-xl hover:bg-gray-100 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isSaving ? (
+                <Loader2 size={16} className="animate-spin text-deep-space" />
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+              )}
+              TIẾP TỤC VỚI GOOGLE
+            </button>
+            
+            <div className="flex items-center gap-2 py-1 opacity-20">
+               <div className="h-px flex-1 bg-white" />
+               <span className="text-[8px] font-bold text-white">OR</span>
+               <div className="h-px flex-1 bg-white" />
+            </div>
+            
+            <button
+              onClick={onStart}
+              className="w-full py-2.5 border border-white/10 text-white/60 font-black uppercase tracking-[0.2em] text-[9px] rounded-xl hover:bg-white/5 transition-all"
+            >
+              CHƠI KHÔNG LƯU
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="flex flex-col items-center space-y-6"
+          >
+            <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-3 w-full backdrop-blur-md">
+               <div className="w-10 h-10 rounded-full bg-sun/10 flex items-center justify-center border border-sun/20">
+                  <UserIcon className="text-sun" size={20} />
+               </div>
+               <div className="text-left flex-1 min-w-0">
+                  <p className="text-[8px] font-black text-sun/60 uppercase tracking-widest leading-none">Chào mừng trở lại</p>
+                  <p className="text-xs text-white font-medium truncate">{user.email}</p>
+               </div>
+            </div>
+          
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onStart}
+              className="group relative px-12 py-4 bg-sun text-deep-space font-black uppercase tracking-[0.4em] text-[10px] md:text-xs rounded-full overflow-hidden transition-all shadow-xl font-display flex items-center gap-2"
+            >
+              {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} fill="currentColor" />}
+              TIẾP TỤC HÀNH TRÌNH
+            </motion.button>
+            
+            <button 
+              onClick={() => signOut(auth)}
+              className="text-[9px] text-gray-500 hover:text-red-400 transition-colors uppercase font-bold tracking-widest"
+            >
+              Đăng xuất
+            </button>
+          </motion.div>
+        )}
 
-        <div className="pt-6 flex justify-center gap-8 border-t border-white/5 opacity-10 font-display">
+        <div className="pt-4 flex justify-center gap-6 border-t border-white/5 opacity-10 font-display">
            <div className="text-center">
-             <div className="text-[7px] font-bold text-gray-500 uppercase tracking-widest">v3.0.5</div>
+             <div className="text-[7px] font-bold text-gray-500 uppercase tracking-widest">v3.1.0</div>
            </div>
            <div className="text-center">
-             <div className="text-[7px] font-bold text-gray-500 uppercase tracking-widest">ORACLE</div>
+             <div className="text-[7px] font-bold text-gray-500 uppercase tracking-widest">SƯ TỬ NHỎ</div>
            </div>
            <div className="text-center">
-             <div className="text-[7px] font-bold text-gray-500 uppercase tracking-widest">ZERO</div>
+             <div className="text-[7px] font-bold text-gray-500 uppercase tracking-widest">SYNC READY</div>
            </div>
         </div>
       </motion.div>
